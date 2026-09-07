@@ -1,0 +1,35 @@
+{
+  "name": "filling-machine-hmi",
+  "version": "1.0.0",
+  "description": "Electron HMI for the filling machine — Modbus TCP control of start/stop, quantity, filling direction, stock refill, and status/RFID readback",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "Suyash Gautam",
+  "license": "MIT",
+  "dependencies": {
+    "modbus-serial": "^8.0.16"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.scientech.fillingmachinehmi",
+    "productName": "Filling Machine HMI",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
