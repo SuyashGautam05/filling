@@ -26,6 +26,15 @@ const fill2Value = document.getElementById('fill2Value');
 const rfidValue = document.getElementById('rfidValue');
 const statusValue = document.getElementById('statusValue');
 
+const m57Indicator = document.getElementById('m57Indicator');
+const captureLog = document.getElementById('captureLog');
+const lastCaptureImg = document.getElementById('lastCaptureImg');
+const cameraVideo = document.getElementById('cameraVideo');
+const captureCanvas = document.getElementById('captureCanvas');
+
+let captureCount = 0;
+let cameraReady = false;
+
 let isConnected = false;
 
 // Local cache for the write-only bits (M153/154/155) so the toggle reflects
@@ -156,6 +165,52 @@ bindBitToggle(fill1Toggle, 'fill1');
 bindBitToggle(fill2Toggle, 'fill2');
 
 // ---------------------------------------------------------------------------
+// Camera: request the webcam once at startup, keep the <video> element fed.
+// ---------------------------------------------------------------------------
+async function initCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    cameraVideo.srcObject = stream;
+    await new Promise((resolve) => {
+      cameraVideo.onloadedmetadata = resolve;
+    });
+    cameraReady = true;
+    captureLog.textContent = 'Camera ready. Waiting for M57 trigger...';
+  } catch (err) {
+    cameraReady = false;
+    captureLog.textContent = `Camera failed to start: ${err.message}`;
+    showError(`Camera unavailable: ${err.message}`);
+  }
+}
+
+async function captureImage() {
+  if (!cameraReady || !cameraVideo.videoWidth) {
+    captureLog.textContent = 'M57 triggered, but camera was not ready — no image captured.';
+    showError('Camera not ready — cannot capture image.');
+    return;
+  }
+  captureCanvas.width = cameraVideo.videoWidth;
+  captureCanvas.height = cameraVideo.videoHeight;
+  const ctx = captureCanvas.getContext('2d');
+  ctx.drawImage(cameraVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+  const dataUrl = captureCanvas.toDataURL('image/png');
+
+  const result = await window.plcAPI.saveImage(dataUrl);
+  captureCount += 1;
+
+  lastCaptureImg.src = dataUrl;
+  lastCaptureImg.classList.add('visible');
+
+  if (result.ok) {
+    captureLog.textContent = `Capture #${captureCount} saved: ${result.path}`;
+  } else {
+    captureLog.textContent = `Capture #${captureCount} taken, but save failed: ${result.error}`;
+  }
+}
+
+initCamera();
+
+// ---------------------------------------------------------------------------
 // Live data from polling
 // ---------------------------------------------------------------------------
 window.plcAPI.onData((result) => {
@@ -172,6 +227,13 @@ window.plcAPI.onData((result) => {
   rfidValue.textContent = result.rfidTag || '--';
   statusValue.textContent = result.statusText || '--';
   fillDirValue.textContent = result.fillDirection ?? '--';
+
+  m57Indicator.textContent = result.cameraTriggerHigh ? 'HIGH' : 'LOW';
+  m57Indicator.className = `pill ${result.cameraTriggerHigh ? 'on' : 'off'}`;
+
+  if (result.fireCapture) {
+    captureImage();
+  }
 
   lastUpdate.textContent = `Last update: ${new Date(result.timestamp).toLocaleTimeString()}`;
 });

@@ -321,3 +321,41 @@ button:disabled {
   color: #ff8f8f;
   font-weight: 600;
 }
+
+.camera-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.pill {
+  padding: 3px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pill.off {
+  background: #34406e;
+  color: var(--text-dim);
+}
+
+.pill.on {
+  background: var(--accent);
+  color: #1a1a1a;
+}
+
+.capture-preview {
+  max-width: 320px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(225, 172, 61, 0.3);
+  display: none;
+}
+
+.capture-preview.visible {
+  display: block;
+}

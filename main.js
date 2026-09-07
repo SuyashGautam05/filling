@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const ModbusRTU = require('modbus-serial');
 
 let mainWindow;
@@ -7,6 +8,10 @@ const client = new ModbusRTU();
 
 let pollTimer = null;
 let stopPulseTimer = null;
+
+// M57 camera-trigger edge detection
+let m57Prev = false;
+let lastCaptureTime = 0;
 
 // ---------------------------------------------------------------------------
 // Address map. This PLC exposes M (bit) and D (word) areas directly, and the
@@ -29,7 +34,14 @@ const ADDR = {
   FILL2_BIT_M155: 155, // Filling two bit, write-only 0/1
   STATUS_D1000: 1000, // Status text, read-only
   RFID_D50: 50, // RFID tag, read-only
+  CAMERA_TRIGGER_M57: 57, // Camera trigger, read-only
 };
+
+// Minimum time between two captures, even if M57 pulses again immediately.
+const MIN_CAPTURE_INTERVAL_MS = 2000;
+
+// Where captured images are saved.
+const CAPTURE_DIR = path.join(app.getPath('userData'), 'captures');
 
 // How many consecutive 16-bit registers to pull for multi-register values.
 const STATUS_REG_COUNT = 8; // D1000 status text (ASCII, word order reversed, bytes swapped)
@@ -52,7 +64,23 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Electron blocks camera/mic access by default for pages loaded with
+  // loadFile() (file:// origin) unless we explicitly allow it here.
+  // Without this, getUserMedia() silently rejects and no picture is ever
+  // taken when M57 goes high.
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(['media', 'camera', 'microphone'].includes(permission));
+  });
+
+  if (session.defaultSession.setPermissionCheckHandler) {
+    session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+      return ['media', 'camera', 'microphone'].includes(permission);
+    });
+  }
+
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   stopPolling();
@@ -69,6 +97,7 @@ function stopPolling() {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  m57Prev = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +171,7 @@ async function readAll() {
       fill2Res,
       statusRes,
       rfidRes,
+      cameraRes,
     ] = await Promise.all([
       client.readCoils(ADDR.START_M100, 1),
       client.readCoils(ADDR.STOP_M101, 1),
@@ -152,7 +182,24 @@ async function readAll() {
       client.readHoldingRegisters(ADDR.FILL2_D13, 1),
       client.readHoldingRegisters(ADDR.STATUS_D1000, STATUS_REG_COUNT),
       client.readHoldingRegisters(ADDR.RFID_D50, RFID_REG_COUNT),
+      client.readCoils(ADDR.CAMERA_TRIGGER_M57, 1),
     ]);
+
+    const cameraTriggerHigh = !!cameraRes.data[0];
+    let fireCapture = false;
+
+    // Edge-triggered: any transition from low to high fires a capture,
+    // even a 1ms pulse — as long as our poll cycle happens to catch it.
+    // Debounced so two rapid pulses don't fire two captures within
+    // MIN_CAPTURE_INTERVAL_MS of each other.
+    if (cameraTriggerHigh && !m57Prev) {
+      const now = Date.now();
+      if (now - lastCaptureTime >= MIN_CAPTURE_INTERVAL_MS) {
+        fireCapture = true;
+        lastCaptureTime = now;
+      }
+    }
+    m57Prev = cameraTriggerHigh;
 
     return {
       ok: true,
@@ -165,6 +212,8 @@ async function readAll() {
       fillingTwoLevel: fill2Res.data[0],
       statusText: registersToAscii(statusRes.data),
       rfidTag: registersToDecimal(rfidRes.data),
+      cameraTriggerHigh,
+      fireCapture,
       timestamp: new Date().toISOString(),
     };
   } catch (err) {
@@ -251,6 +300,24 @@ async function writeRegisterSafe(address, value) {
     return { ok: false, error: err.message };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Camera capture storage
+// ---------------------------------------------------------------------------
+ipcMain.handle('camera:saveImage', async (event, dataUrl) => {
+  try {
+    if (!fs.existsSync(CAPTURE_DIR)) {
+      fs.mkdirSync(CAPTURE_DIR, { recursive: true });
+    }
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+    const filename = `capture_${Date.now()}.png`;
+    const filePath = path.join(CAPTURE_DIR, filename);
+    fs.writeFileSync(filePath, base64, 'base64');
+    return { ok: true, path: filePath };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

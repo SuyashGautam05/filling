@@ -27,7 +27,7 @@
       </div>
       <div class="field">
         <label for="interval">Poll Interval (ms)</label>
-        <input type="number" id="interval" value="800" />
+        <input type="number" id="interval" value="200" />
       </div>
       <div class="field connect-actions">
         <button id="connectBtn">Connect</button>
@@ -120,6 +120,18 @@
             <div class="reading-value" id="statusValue">--</div>
           </div>
         </div>
+      </section>
+      <!-- Camera / vision -->
+      <section class="card wide">
+        <h2>Camera (M57 Trigger)</h2>
+        <div class="camera-status-row">
+          <span>M57 state:</span>
+          <span id="m57Indicator" class="pill off">LOW</span>
+          <span id="captureLog">No captures yet.</span>
+        </div>
+        <img id="lastCaptureImg" class="capture-preview" alt="Last capture" />
+        <video id="cameraVideo" autoplay muted playsinline style="display:none"></video>
+        <canvas id="captureCanvas" style="display:none"></canvas>
       </section>
     </div>
 

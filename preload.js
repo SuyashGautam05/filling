@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('plcAPI', {
   setQuantity: (value) => ipcRenderer.invoke('modbus:setQuantity', value),
   setFillingDirection: (direction) => ipcRenderer.invoke('modbus:setFillingDirection', direction),
   writeBit: (target, value) => ipcRenderer.invoke('modbus:writeBit', { target, value }),
+  saveImage: (dataUrl) => ipcRenderer.invoke('camera:saveImage', dataUrl),
 
   onData: (callback) => {
     ipcRenderer.removeAllListeners('modbus:data');
